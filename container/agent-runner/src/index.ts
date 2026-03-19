@@ -389,6 +389,22 @@ async function runQuery(
     log(`Additional directories: ${extraDirs.join(', ')}`);
   }
 
+  // Merge mcpServers from group settings.json (project-level) with the built-in nanoclaw server.
+  // The SDK's programmatic mcpServers overrides file-based ones, so we merge manually here.
+  const groupSettingsPath = '/workspace/group/.claude/settings.json';
+  const extraMcpServers: Record<string, { command: string; args?: string[]; env?: Record<string, string> }> = {};
+  if (fs.existsSync(groupSettingsPath)) {
+    try {
+      const groupSettings = JSON.parse(fs.readFileSync(groupSettingsPath, 'utf-8'));
+      if (groupSettings.mcpServers && typeof groupSettings.mcpServers === 'object') {
+        Object.assign(extraMcpServers, groupSettings.mcpServers);
+        log(`Loaded ${Object.keys(groupSettings.mcpServers).length} MCP server(s) from group settings: ${Object.keys(groupSettings.mcpServers).join(', ')}`);
+      }
+    } catch (err) {
+      log(`Warning: failed to parse group settings.json: ${err}`);
+    }
+  }
+
   for await (const message of query({
     prompt: stream,
     options: {
@@ -407,7 +423,7 @@ async function runQuery(
         'TeamCreate', 'TeamDelete', 'SendMessage',
         'TodoWrite', 'ToolSearch', 'Skill',
         'NotebookEdit',
-        'mcp__nanoclaw__*'
+        'mcp__*'
       ],
       env: sdkEnv,
       permissionMode: 'bypassPermissions',
@@ -423,6 +439,7 @@ async function runQuery(
             NANOCLAW_IS_MAIN: containerInput.isMain ? '1' : '0',
           },
         },
+        ...extraMcpServers,
       },
       hooks: {
         PreCompact: [{ hooks: [createPreCompactHook(containerInput.assistantName)] }],
