@@ -45,9 +45,6 @@ function markdownToMrkdwn(text: string): string {
   result = result.replace(/\*\*(.+?)\*\*/g, '*$1*');
   result = result.replace(/__(.+?)__/g, '*$1*');
 
-  // Italic: *text* → _text_ (only single asterisks not already converted)
-  result = result.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '_$1_');
-
   // Strikethrough: ~~text~~ → ~text~
   result = result.replace(/~~(.+?)~~/g, '~$1~');
 
@@ -61,10 +58,16 @@ function markdownToMrkdwn(text: string): string {
   result = result.replace(/^(-{3,}|\*{3,}|_{3,})$/gm, '');
 
   // Restore inline code
-  result = result.replace(/\x00INLINE_CODE_(\d+)\x00/g, (_m, i) => inlineCodes[parseInt(i)]);
+  result = result.replace(
+    /\x00INLINE_CODE_(\d+)\x00/g,
+    (_m, i) => inlineCodes[parseInt(i)],
+  );
 
   // Restore code blocks
-  result = result.replace(/\x00CODE_BLOCK_(\d+)\x00/g, (_m, i) => codeBlocks[parseInt(i)]);
+  result = result.replace(
+    /\x00CODE_BLOCK_(\d+)\x00/g,
+    (_m, i) => codeBlocks[parseInt(i)],
+  );
 
   return result;
 }
