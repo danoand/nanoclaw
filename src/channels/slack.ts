@@ -17,6 +17,58 @@ import {
 // Messages exceeding this are split into sequential chunks.
 const MAX_MESSAGE_LENGTH = 4000;
 
+/**
+ * Convert standard Markdown to Slack mrkdwn format.
+ * Applied to all outbound messages so the agent doesn't need to know about Slack's format.
+ */
+function markdownToMrkdwn(text: string): string {
+  // Protect code blocks and inline code from other transformations
+  const codeBlocks: string[] = [];
+  const inlineCodes: string[] = [];
+
+  // Extract fenced code blocks (```lang?\ncode\n```)
+  let result = text.replace(/```[\w]*\n?([\s\S]*?)```/g, (_match, code) => {
+    const idx = codeBlocks.push(`\`\`\`${code}\`\`\``) - 1;
+    return `\x00CODE_BLOCK_${idx}\x00`;
+  });
+
+  // Extract inline code
+  result = result.replace(/`([^`]+)`/g, (_match, code) => {
+    const idx = inlineCodes.push(`\`${code}\``) - 1;
+    return `\x00INLINE_CODE_${idx}\x00`;
+  });
+
+  // Headings → bold
+  result = result.replace(/^#{1,6}\s+(.+)$/gm, '*$1*');
+
+  // Bold: **text** or __text__ → *text*
+  result = result.replace(/\*\*(.+?)\*\*/g, '*$1*');
+  result = result.replace(/__(.+?)__/g, '*$1*');
+
+  // Italic: *text* → _text_ (only single asterisks not already converted)
+  result = result.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '_$1_');
+
+  // Strikethrough: ~~text~~ → ~text~
+  result = result.replace(/~~(.+?)~~/g, '~$1~');
+
+  // Links: [text](url) → <url|text>
+  result = result.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<$2|$1>');
+
+  // Bullet lists: leading "- " or "* " → "• "
+  result = result.replace(/^[ \t]*[-*]\s+/gm, '• ');
+
+  // Horizontal rules → blank line
+  result = result.replace(/^(-{3,}|\*{3,}|_{3,})$/gm, '');
+
+  // Restore inline code
+  result = result.replace(/\x00INLINE_CODE_(\d+)\x00/g, (_m, i) => inlineCodes[parseInt(i)]);
+
+  // Restore code blocks
+  result = result.replace(/\x00CODE_BLOCK_(\d+)\x00/g, (_m, i) => codeBlocks[parseInt(i)]);
+
+  return result;
+}
+
 // The message subtypes we process. Bolt delivers all subtypes via app.event('message');
 // we filter to regular messages (GenericMessageEvent, subtype undefined) and bot messages
 // (BotMessageEvent, subtype 'bot_message') so we can track our own output.
@@ -158,6 +210,7 @@ export class SlackChannel implements Channel {
 
   async sendMessage(jid: string, text: string): Promise<void> {
     const channelId = jid.replace(/^slack:/, '');
+    text = markdownToMrkdwn(text);
 
     if (!this.connected) {
       this.outgoingQueue.push({ jid, text });
